@@ -140,6 +140,9 @@ Late::visit (AST::LetStmt &let)
     visit (let.get_init_expr ());
   visit (let.get_pattern ());
 
+  if (let.has_else_expr ())
+    visit (let.get_init_expr ());
+
   // how do we deal with the fact that `let a = blipbloup` should look for a
   // label and cannot go through function ribs, but `let a = blipbloup()` can?
 
@@ -232,23 +235,59 @@ Late::visit (AST::IdentifierExpr &expr)
     }
   else
     {
-      if (auto typ = ctx.types.get_prelude (expr.get_ident ()))
-	resolved = typ;
+      if (auto type = ctx.types.get_prelude (expr.get_ident ()))
+	{
+	  resolved = type;
+	}
       else
-	rust_error_at (expr.get_locus (),
-		       "could not resolve identifier expression: %qs",
-		       expr.get_ident ().as_string ().c_str ());
+	{
+	  rust_error_at (expr.get_locus (), ErrorCode::E0425,
+			 "cannot find value %qs in this scope",
+			 expr.get_ident ().as_string ().c_str ());
+	  return;
+	}
+    }
+
+  if (resolved->is_ambiguous ())
+    {
+      rust_error_at (expr.get_locus (), ErrorCode::E0659, "%qs is ambiguous",
+		     expr.as_string ().c_str ());
+      return;
     }
 
   ctx.map_usage (Usage (expr.get_node_id ()),
 		 Definition (resolved->get_node_id ()));
 
-  // in the old resolver, resolutions are kept in the resolver, not the mappings
-  // :/ how do we deal with that?
-  // ctx.mappings.insert_resolved_name(expr, resolved);
-
   // For empty types, do we perform a lookup in ctx.types or should the
   // toplevel instead insert a name in ctx.values? (like it currently does)
+}
+
+void
+Late::visit (AST::StructExprFieldIdentifier &expr)
+{
+  tl::optional<Rib::Definition> resolved = tl::nullopt;
+
+  if (auto value = ctx.values.get (expr.get_field_name ()))
+    {
+      resolved = value;
+    }
+  // seems like we don't need a type namespace lookup
+  else
+    {
+      rust_error_at (expr.get_locus (), "could not resolve struct field: %qs",
+		     expr.get_field_name ().as_string ().c_str ());
+      return;
+    }
+
+  if (resolved->is_ambiguous ())
+    {
+      rust_error_at (expr.get_locus (), ErrorCode::E0659, "%qs is ambiguous",
+		     expr.as_string ().c_str ());
+      return;
+    }
+
+  ctx.map_usage (Usage (expr.get_node_id ()),
+		 Definition (resolved->get_node_id ()));
 }
 
 void
@@ -351,6 +390,10 @@ Late::visit (AST::StructStruct &s)
 void
 Late::visit (AST::StructExprStruct &s)
 {
+  visit_outer_attrs (s);
+  visit_inner_attrs (s);
+  DefaultResolver::visit (s.get_struct_name ());
+
   auto resolved
     = ctx.resolve_path (s.get_struct_name ().get_segments (), Namespace::Types);
 
@@ -361,24 +404,34 @@ Late::visit (AST::StructExprStruct &s)
 void
 Late::visit (AST::StructExprStructBase &s)
 {
+  visit_outer_attrs (s);
+  visit_inner_attrs (s);
+  DefaultResolver::visit (s.get_struct_name ());
+  visit (s.get_struct_base ());
+
   auto resolved
     = ctx.resolve_path (s.get_struct_name ().get_segments (), Namespace::Types);
 
   ctx.map_usage (Usage (s.get_struct_name ().get_node_id ()),
 		 Definition (resolved->get_node_id ()));
-  DefaultResolver::visit (s);
 }
 
 void
 Late::visit (AST::StructExprStructFields &s)
 {
+  visit_outer_attrs (s);
+  visit_inner_attrs (s);
+  DefaultResolver::visit (s.get_struct_name ());
+  if (s.has_struct_base ())
+    visit (s.get_struct_base ());
+  for (auto &field : s.get_fields ())
+    visit (field);
+
   auto resolved
     = ctx.resolve_path (s.get_struct_name ().get_segments (), Namespace::Types);
 
   ctx.map_usage (Usage (s.get_struct_name ().get_node_id ()),
 		 Definition (resolved->get_node_id ()));
-
-  DefaultResolver::visit (s);
 }
 
 // needed because Late::visit (AST::GenericArg &) is non-virtual
