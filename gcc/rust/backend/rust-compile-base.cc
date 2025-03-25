@@ -660,11 +660,15 @@ HIRCompileBase::compile_function (
   tree compiled_fn_type = TyTyResolveCompile::compile (ctx, fntype);
   std::string ir_symbol_name
     = canonical_path.get () + fntype->subst_as_string ();
+  std::string can_path = Analysis::Mappings::get ().get_current_crate_name ();
 
   // we don't mangle the main fn since we haven't implemented the main shim
-  bool is_main_fn = fn_name.compare ("main") == 0;
+  bool is_main_fn = (fn_name.compare ("main") == 0);
   if (is_main_fn)
     {
+      rust_debug ("Bippity boppity boo: %s %s %s %s Fuck",
+		  Analysis::Mappings::get ().get_current_crate_name ().c_str (),
+		  self_param.as_string ().c_str (), can_path.c_str(), ir_symbol_name.c_str ());
       rust_assert (!main_identifier_node);
       /* So that 'MAIN_NAME_P' works.  */
       main_identifier_node = get_identifier (ir_symbol_name.c_str ());
