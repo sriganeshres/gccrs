@@ -664,7 +664,9 @@ HIRCompileBase::compile_function (
 
   // we don't mangle the main fn since we haven't implemented the main shim
   bool is_main_fn = (fn_name.compare ("main") == 0);
-  if (is_main_fn)
+  bool nr1_main = (fn_name.compare ("main") == 0) && (ir_symbol_name.compare(can_path + "::main") == 0);
+  bool nr2_main = (fn_name.compare ("main") == 0) && (ir_symbol_name.compare(can_path) == 0);
+  if (is_main_fn && (nr1_main || nr2_main))
     {
       rust_debug ("Bippity boppity boo: %s %s %s %s Fuck",
 		  Analysis::Mappings::get ().get_current_crate_name ().c_str (),
